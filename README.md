@@ -3,6 +3,8 @@ python code to load a lotus notes nsf file and recursively extract all docs and 
 
 
 
+
+
 📂 Lotus Notes NSF Data Extractor
 This Python script extracts documents and attachments from a Lotus Notes .nsf database and saves them into structured folders on your filesystem.
 
