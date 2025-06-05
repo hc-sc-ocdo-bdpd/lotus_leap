@@ -2,12 +2,12 @@ import win32com.client
 import os
 import re
 
-NSF_PATH = "FND-CHHAD-Reference-Libraryl.nsf"
+#NSF_PATH = "FND-CHHAD-Reference-Libraryl.nsf"
+NSF_PATH = "names.nsf"
 LOTUS_PASSWORD = ""  # If needed
-OUTPUT_DIR = "output_all_views_categories"
+OUTPUT_DIR = "output_geds"
 
 # Which column index to parse for backslash-delimited categories?
-# If your category is in the first column, use 0. If second column, use 1, etc.
 CATEGORY_COLUMN_INDEX = 0
 
 MAX_FOLDER_NAME_LENGTH = 100
@@ -37,7 +37,7 @@ def get_document_subject(doc):
 def extract_document(doc, folder_path):
     """
     Creates a subfolder named after doc subject + short UniversalID,
-    writes fields to 'document.txt', and extracts attachments.
+    writes fields to 'document.txt', and extracts attachments robustly.
     """
     subject = get_document_subject(doc)
     try:
@@ -60,18 +60,46 @@ def extract_document(doc, folder_path):
                 f.write(f"{item.Name}: <Error reading value: {e}>\n")
         f.write("--------------------\n")
 
-    # Extract attachments (if any)
+    # Extract attachments (robust approach)
     for item in doc.Items:
-        if hasattr(item, "EmbeddedObjects"):
-            embedded_objects = item.EmbeddedObjects
-            if not embedded_objects:
-                continue
+        # Skip items with no EmbeddedObjects
+        if not hasattr(item, "EmbeddedObjects"):
+            continue
+
+        embedded_objects = item.EmbeddedObjects
+        if not embedded_objects:
+            continue
+
+        try:
+            # If it's a COM collection (has Count)
             if hasattr(embedded_objects, "Count"):
                 for i in range(1, embedded_objects.Count + 1):
                     embedded_obj = embedded_objects.Item(i)
-                    attachment_name = sanitize_folder_name(embedded_obj.Name)
-                    attachment_path = os.path.join(doc_folder_path, attachment_name)
-                    embedded_obj.ExtractFile(attachment_path)
+                    attachment_name = embedded_obj.Name or "UntitledAttachment"
+                    safe_name = sanitize_folder_name(attachment_name)
+                    attachment_path = os.path.join(doc_folder_path, safe_name)
+                    try:
+                        embedded_obj.ExtractFile(attachment_path)
+                        print(f"Extracted attachment '{attachment_name}' to {attachment_path}")
+                    except Exception as e:
+                        print(f"Failed to extract attachment '{attachment_name}': {e}")
+
+            # Else if it's a Python iterable
+            elif hasattr(embedded_objects, "__iter__"):
+                for embedded_obj in embedded_objects:
+                    attachment_name = embedded_obj.Name or "UntitledAttachment"
+                    safe_name = sanitize_folder_name(attachment_name)
+                    attachment_path = os.path.join(doc_folder_path, safe_name)
+                    try:
+                        embedded_obj.ExtractFile(attachment_path)
+                        print(f"Extracted attachment '{attachment_name}' to {attachment_path}")
+                    except Exception as e:
+                        print(f"Failed to extract attachment '{attachment_name}': {e}")
+
+            else:
+                print(f"EmbeddedObjects in item '{item.Name}' is neither a COM collection nor an iterable.")
+        except Exception as e:
+            print(f"Error processing embedded objects in item '{item.Name}': {e}")
 
 def extract_all_views_with_categories(password, nsf_path, output_dir="output_all_views_categories"):
     """
